@@ -13,7 +13,7 @@ class VocabFactory:
     def build_vocab(self, d_iter, save_vocab_file='models/vocab_obj.pth'):
         def yield_tokens(data_iter):
             for X, y in data_iter:
-                yield self.tokenizer(X)
+                yield self.tokenizer(X.lower())
 
         vocab = build_vocab_from_iterator(yield_tokens(d_iter), specials=self.specials, min_freq=2)
         vocab.set_default_index(0)

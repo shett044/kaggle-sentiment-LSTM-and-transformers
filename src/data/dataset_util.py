@@ -1,5 +1,6 @@
-import pandas as pd
 from typing import Iterable, Callable
+
+import pandas as pd
 from sklearn.model_selection import train_test_split
 
 
@@ -63,9 +64,18 @@ class DataSpace:
                              test_df=pd.read_csv(test_filename, **pdcsv_kw))
         self.getX = get_x or (lambda x: x)
         self.getY = get_y or (lambda x: x)
+        self.X_transformer = lambda x: x
+        self.y_transformer = lambda y: y
+
+    def set_transformer(self, x_trx: Callable = None, y_trx: Callable = None):
+        if x_trx:
+            self.X_transformer = x_trx
+        if y_trx:
+            self.y_transformer = y_trx
 
     def gen_validation_index(self, val_size, stratify=None, shuffle=None):
-        train_idx, val_idx = train_test_split(self.dftype.TRAINVAL.index, test_size=val_size, stratify=stratify, shuffle=shuffle)
+        train_idx, val_idx = train_test_split(self.dftype.TRAINVAL.index, test_size=val_size, stratify=stratify,
+                                              shuffle=shuffle)
         self.set_validation_index(val_idx)
         return train_idx, val_idx
 
@@ -82,20 +92,32 @@ class DataSpace:
     def get_df_split(self, dataset_type: DSType) -> pd.DataFrame:
         return self.dftype.get_df_by_DSType(dataset_type)
 
-    def get_XY_split(self, dataset_type: DSType) -> pd.DataFrame:
+    def get_XY_split(self, dataset_type: DSType, use_transformer=True) -> pd.DataFrame:
         df = self.get_df_split(dataset_type)
-        return self.getX(df), self.getY(df)
+        X, y = self.getX(df), self.getY(df)
+        if use_transformer:
+            X = X.apply(self.X_transformer)
+            if dataset_type != 'TEST':
+                y = y.apply(self.y_transformer)
+        return X, y
 
-    def yield_XY_split(self, dataset_type: DSType) -> Iterable:
+    def yield_XY_split(self, dataset_type: DSType, use_transformer=True) -> Iterable:
         for i, r in self.get_df_split(dataset_type).iterrows():
-            X = self.getX(r)
-            y = self.getY(r) if dataset_type != DSType.TEST else None
+            X, y = self.getX(r), self.getY(r)
+            if use_transformer:
+                X, y = self.X_transformer(X), self.y_transformer(y)
             yield X, y
 
-    def yield_X_split(self, dataset_type: DSType) -> Iterable:
+    def yield_X_split(self, dataset_type: DSType, use_transformer=True) -> Iterable:
         for i, r in self.get_df_split(dataset_type).iterrows():
-            yield self.getX(r)
+            X= self.getX(r)
+            if use_transformer:
+                X = self.X_transformer(X)
+            yield X
 
-    def yield_y_split(self, dataset_type: DSType) -> Iterable:
+    def yield_y_split(self, dataset_type: DSType, use_transformer=True) -> Iterable:
         for i, r in self.get_df_split(dataset_type).iterrows():
-            yield self.getY(r) if dataset_type != DSType.TEST else None
+            y = self.getY(r)
+            if use_transformer:
+                y = self.y_transformer(y)
+            yield y
