@@ -62,9 +62,15 @@ def phrase_preprocess(x: str) -> str:
     Remove non alphabet characters and lowers the upper case.
 
     """
-    x = x.lower().strip()
-    # x = re.sub('[^a-zA-z0-9\s]', '', x) # Might punctuation for expressions
+    x = x.lower()
+    x = re.sub('[^a-zA-z0-9\s]', '', x)  # Remove non alphanumeric
+    x = x.strip()
     return x
+
+
+def tokenizer(x: str):
+    # tokenizer = get_tokenizer('basic_english')
+    return x.split()
 
 
 def add_sos_eos(x):
@@ -162,20 +168,19 @@ movie_senti_ds = dataset_util.DataSpace(
     get_y=lambda df: df['Sentiment'] if 'Sentiment' in df else torch.nan,
     sep='\t', compression='zip'
 )
-
+vocab_tokenizer = c_utils.sequential_transforms(phrase_preprocess, tokenizer)
 train_val_X, train_val_y = movie_senti_ds.get_XY_split(ds_typ.TRAINVAL)
-movie_senti_ds.set_transformer(x_trx=phrase_preprocess)
 NLABEL = train_val_y.nunique()
 wt_y = compute_class_weight("balanced", classes=sorted(np.unique(train_val_y)), y=train_val_y)
 if VOCAB_REFRESH:
-    vocab = vocab_utils.VocabFactory(specials=SPECIALS)
+    vocab = vocab_utils.VocabFactory(specials=SPECIALS, tokenizer=vocab_tokenizer)
     vocab.build_vocab(d_iter=movie_senti_ds.yield_XY_split(ds_typ.TRAINVAL))
 else:
     vocab = vocab_utils.VocabFactory.load_vocab(model_dir.joinpath('vocab_obj.pth'), SPECIALS)
 
 NTOKENS = vocab.get_vocab_size()
 
-phrase_transformer = c_utils.sequential_transforms(phrase_preprocess, vocab.transform, add_sos_eos, to_device_tensor)
+phrase_transformer = c_utils.sequential_transforms(vocab.transform, add_sos_eos, to_device_tensor)
 
 target_transformer = lambda x: to_device_tensor(x)
 

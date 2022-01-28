@@ -1,19 +1,20 @@
-from torchtext.data.utils import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
 import torch
+from torchtext.vocab import build_vocab_from_iterator
 
 
 class VocabFactory:
-    def __init__(self, specials: list):
+    def __init__(self, specials: list, tokenizer=None):
         self.specials = specials if len(specials) > 0 else ['<unk>']
-        # self.tokenizer = get_tokenizer('basic_english')
-        self.tokenizer = lambda x: x.split()
+        if tokenizer is None:
+            # self.tokenizer = get_tokenizer('basic_english')
+            tokenizer = lambda x: x.split()
+        self.tokenizer = tokenizer
         self.vocab = None
 
     def build_vocab(self, d_iter, save_vocab_file='models/vocab_obj.pth'):
         def yield_tokens(data_iter):
             for X, y in data_iter:
-                yield self.tokenizer(X.lower())
+                yield self.tokenizer(X)
 
         vocab = build_vocab_from_iterator(yield_tokens(d_iter), specials=self.specials, min_freq=2)
         vocab.set_default_index(0)
