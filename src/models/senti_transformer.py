@@ -44,44 +44,26 @@ class PositionalEncoding(nn.Module):
         Examples:
             >>> output = pos_encoder(x)
         """
-
-        x = x + self.pe[:x.size(0), :]
+        x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 
 
 class SentimentTransformerModel(nn.Module):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
-    def __init__(self, ntoken, ninp, nhead, nhid, nlayers, nlabel, dropout=0.5):
+    def __init__(self, ntoken, ninp, nhead, nhid, nlayers, nlabel, dropout=0.3):
         super(SentimentTransformerModel, self).__init__()
         self.model_type = 'Transformer'
         self.src_mask = None
         self.ninp = ninp
         self.nlabel = nlabel
-        self.encoder = nn.Embedding(ntoken, ninp, padding_idx= 1)
+        self.encoder = nn.Embedding(ntoken, ninp, padding_idx=1)
         self.pos_encoder = PositionalEncoding(ninp, dropout)
         encoder_layers = TransformerEncoderLayer(ninp, nhead, nhid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
-        self.decoder = nn.Linear(3 * ninp, nlabel)
+        self.decoder = nn.Sequential(
+            *[nn.Linear(3 * ninp, ninp), nn.Dropout(p=dropout), nn.ReLU(), nn.Linear(ninp, nlabel)])
         # self.decoder_2 = nn.Linear(ninp, nlabel)
-        # self.init_weights()
-
-    def _create_mask(self, src, PAD_IDX=1):
-        src_seq_len = src.shape[0]
-        src_mask = torch.zeros((src_seq_len, src_seq_len)).type(torch.bool)
-        src_padding_mask = (src == PAD_IDX).transpose(0, 1)
-        return src_mask, src_padding_mask
-
-    # def _generate_square_subsequent_mask(self, sz):
-    #     mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-    #     mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-    #     return mask
-
-    def init_weights(self):
-        initrange = 0.1
-        nn.init.uniform_(self.encoder.weight, -initrange, initrange)
-        nn.init.zeros_(self.decoder.weight)
-        nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
     def forward(self, src, pad_mask, has_mask=True):
         self.src_pad_mask = pad_mask
@@ -90,21 +72,25 @@ class SentimentTransformerModel(nn.Module):
             if self.src_mask is None or self.src_mask.size(0) != len(src):
                 mask = Transformer.generate_square_subsequent_mask(len(src)).to(device)
                 self.src_mask = mask
-                # self.src_mask, self.src_pad_mask = self._create_mask(src)
         else:
             self.src_mask = None
             self.src_pad_mask = None
 
-        embed_src = self.encoder(src.int()) * math.sqrt(self.ninp)
+        embed_src = self.encoder(src.int()) * math.sqrt(self.ninp)  # [sequence length, batch size, embed dim]
+        # Debug
         # for name, params in self.named_parameters():
-        #     print("-->name:", name, "-->max_grad:", params.grad, "-->min_grad:", params.grad)
+        #     print("-->name:", name, "-->max_grad:", params.grad.max(), "-->min_grad:", params.grad.min())
 
         if embed_src.isnan().all():
-            print("Lol")
-        embed_src = self.pos_encoder(embed_src)
-        enc_output = self.transformer_encoder(embed_src, src_key_padding_mask=self.src_pad_mask.bool())
-        # enc_output = self.transformer_encoder(src, self.src_mask)
+            for name, params in self.named_parameters():
+                print("-->name:", name, "--> grad:", params.grad)
+
+        embed_src = self.pos_encoder(embed_src)  # [sequence length, batch size, embed dim]
+        enc_output = self.transformer_encoder(embed_src,
+                                              src_key_padding_mask=self.src_pad_mask.bool())  # [sequence length, batch size, embed dim]
         comb_seq_output = torch.cat(
-            (enc_output.max(dim=0).values, enc_output.min(dim=0).values, enc_output.mean(dim=0)), dim=1)
-        output = self.decoder(comb_seq_output)
+            (enc_output.max(dim=0).values, enc_output.min(dim=0).values, enc_output.mean(dim=0)),
+            dim=1)  # [batch_size, 3*embed_dim]
+
+        output = self.decoder(comb_seq_output)  # [batch_size, nlab]
         return output
